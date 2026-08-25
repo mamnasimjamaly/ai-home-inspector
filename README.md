@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AI Home Inspector
 
-## Getting Started
+Take a photo of a deck, wall, roof, exterior, or yard. Gemini looks at the image and returns likely maintenance issues, sorted by severity, with a next step for each one.
 
-First, run the development server:
+This is an AI assistant, not a licensed home inspection.
+
+## Setup
+
+```bash
+npm install
+```
+
+Copy `.env.example` to `.env.local` and add a [Google AI Studio](https://aistudio.google.com/apikey) key:
+
+```
+GEMINI_API_KEY=your_gemini_api_key_here
+```
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## How it works
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1. Landing page (`/`) — start an inspection
+2. Inspect page (`/inspect`) — camera or file upload, pick an area
+3. `POST /api/inspect` — sends the photo to Gemini (`gemini-3.6-flash`)
+4. Report — photo stays on screen; findings list what is visible and what to do
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+```bash
+npm run dev    # local server
+npm run build  # production build
+npm run start  # serve the build
+npm run lint
+```
