@@ -12,7 +12,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { AREAS, findingsFor, type Area, type Finding, type Severity } from "@/lib/sample-findings";
+import { AREAS, sortFindings, type Area, type Finding, type Severity } from "@/lib/inspection";
 import { cn } from "@/lib/utils";
 
 const severityVariant: Record<Severity, "destructive" | "secondary" | "outline"> = {
@@ -149,25 +149,72 @@ export function InspectForm() {
   }
 
   async function runInspection() {
-    if (!file) return;
+    if (!file || !area) {
+      setError("Choose a photo and an area first.");
+      return;
+    }
     setStatus("running");
     setFindings([]);
-    await new Promise((resolve) => setTimeout(resolve, 1100));
-    setFindings(findingsFor(area));
-    setStatus("done");
+    setError(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("photo", file);
+      formData.append("area", area);
+
+      const response = await fetch("/api/inspect", {
+        method: "POST",
+        body: formData,
+      });
+      const data = (await response.json()) as {
+        findings?: Finding[];
+        error?: string;
+      };
+
+      if (!response.ok) {
+        setError(data.error ?? "Inspection failed. Try another photo.");
+        setStatus("idle");
+        return;
+      }
+
+      setFindings(sortFindings(data.findings ?? []));
+      setStatus("done");
+    } catch {
+      setError("Could not reach the inspection service.");
+      setStatus("idle");
+    }
   }
 
+  const reportReady = status === "done";
+  const heading = reportReady && area ? area + " report" : "Inspect your home";
+  const subheading = reportReady
+    ? "AI review of the photo — not a licensed inspection."
+    : "Upload a photo and pick an area. We will flag likely maintenance and repair issues.";
+  const findingsMeta =
+    findings.length === 0
+      ? "Nothing concerning stood out."
+      : "Sorted by severity · " +
+        findings.length +
+        (findings.length === 1 ? " issue" : " issues");
+
   return (
-    <main className="mx-auto flex w-full max-w-xl flex-1 flex-col gap-8 px-6 py-10">
-      <div className="text-center">
-        <h1 className="text-3xl font-semibold tracking-tight">Inspect your home</h1>
-        <p className="mt-2 text-muted-foreground">
-          Upload a photo and pick an area. We will flag likely maintenance and
-          repair issues.
-        </p>
+    <main
+      className={cn(
+        "mx-auto flex w-full flex-1 flex-col gap-8 px-6 py-10",
+        reportReady ? "max-w-5xl" : "max-w-xl"
+      )}
+    >
+      <div className={cn("text-center", reportReady && "lg:text-left")}>
+        <h1 className="text-3xl font-semibold tracking-tight">{heading}</h1>
+        <p className="mt-2 text-muted-foreground">{subheading}</p>
       </div>
 
-      <Card>
+      <div
+        className={cn(
+          reportReady && "grid gap-8 lg:grid-cols-2 lg:items-start"
+        )}
+      >
+      <Card className={cn(reportReady && "lg:sticky lg:top-4")}>
         <CardHeader>
           <CardTitle>Photo</CardTitle>
           <CardDescription>
@@ -301,6 +348,7 @@ export function InspectForm() {
                   size="sm"
                   variant={area === name ? "default" : "outline"}
                   onClick={() => {
+                    if (name === area) return;
                     setArea(name);
                     setStatus("idle");
                     setFindings([]);
@@ -310,6 +358,11 @@ export function InspectForm() {
                 </Button>
               ))}
             </div>
+            {file && !area ? (
+              <p className="text-sm text-muted-foreground">
+                Pick an area to inspect.
+              </p>
+            ) : null}
           </fieldset>
         </CardContent>
         <CardFooter>
@@ -317,7 +370,7 @@ export function InspectForm() {
             type="button"
             size="lg"
             className="w-full"
-            disabled={!file || status === "running" || cameraOpen}
+            disabled={!file || !area || status === "running" || cameraOpen}
             onClick={runInspection}
           >
             {status === "running" ? (
@@ -325,6 +378,8 @@ export function InspectForm() {
                 <LoaderCircle className="animate-spin" />
                 Inspecting…
               </>
+            ) : reportReady ? (
+              "Inspect again"
             ) : (
               "Inspect this photo"
             )}
@@ -332,33 +387,44 @@ export function InspectForm() {
         </CardFooter>
       </Card>
 
-      {status === "done" ? (
+      {reportReady ? (
         <section className="space-y-4" aria-live="polite">
           <div>
             <h2 className="text-lg font-semibold">Findings</h2>
-            <p className="text-sm text-muted-foreground">
-              Sample findings for {area ?? "this photo"} — AI analysis comes next.
-            </p>
+            <p className="text-sm text-muted-foreground">{findingsMeta}</p>
           </div>
-          <ul className="space-y-3">
-            {findings.map((finding) => (
-              <li key={finding.id}>
-                <Card size="sm">
-                  <CardHeader>
-                    <CardTitle className="flex items-center justify-between gap-3">
-                      <span>{finding.title}</span>
-                      <Badge variant={severityVariant[finding.severity]}>
-                        {finding.severity}
-                      </Badge>
-                    </CardTitle>
-                    <CardDescription>{finding.summary}</CardDescription>
-                  </CardHeader>
-                </Card>
-              </li>
-            ))}
-          </ul>
+          {findings.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              Try a closer shot or another angle.
+            </p>
+          ) : (
+            <ul className="space-y-3">
+              {findings.map((finding) => (
+                <li key={finding.id}>
+                  <Card size="sm">
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between gap-3">
+                        <span>{finding.title}</span>
+                        <Badge variant={severityVariant[finding.severity]}>
+                          {finding.severity}
+                        </Badge>
+                      </CardTitle>
+                      <CardDescription>{finding.summary}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm">
+                        <span className="font-medium">What to do: </span>
+                        {finding.whatToDo}
+                      </p>
+                    </CardContent>
+                  </Card>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       ) : null}
+      </div>
     </main>
   );
 }
