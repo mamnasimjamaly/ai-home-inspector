@@ -1,17 +1,19 @@
-import { InspectError, inspectPhoto, parseArea } from "@/lib/inspect-photo";
+import { InspectError, inspectPhotos, parseRoom } from "@/lib/inspect-photo";
 
 export const maxDuration = 60;
 
 export async function POST(request: Request) {
   try {
     const formData = await request.formData();
-    const photo = formData.get("photo");
+    const photos = formData
+      .getAll("photos")
+      .filter((item): item is File => item instanceof File && item.size > 0);
 
-    if (!(photo instanceof Blob) || photo.size === 0) {
-      return Response.json({ error: "Add a photo first." }, { status: 400 });
+    if (photos.length === 0) {
+      return Response.json({ error: "Add at least one frame." }, { status: 400 });
     }
 
-    const findings = await inspectPhoto(photo, parseArea(formData.get("area")));
+    const findings = await inspectPhotos(photos, parseRoom(formData.get("room")));
     return Response.json({ findings });
   } catch (error) {
     if (error instanceof InspectError) {
@@ -20,7 +22,7 @@ export async function POST(request: Request) {
 
     console.error("Inspection failed", error);
     return Response.json(
-      { error: "Could not inspect that photo. Try another one." },
+      { error: "Could not inspect those frames. Try another scan." },
       { status: 502 }
     );
   }

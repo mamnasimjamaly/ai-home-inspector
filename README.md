@@ -1,8 +1,10 @@
 # AI Home Inspector
 
-Take a photo of a deck, wall, roof, exterior, or yard. Gemini looks at the image and returns likely maintenance issues, sorted by severity, with a next step for each one.
+Walk a room with the camera. The app captures frames and Gemini flags possible issues such as cracks, water stains, mold-like discoloration, peeling paint, wood deterioration, damaged siding, railing damage, missing caulk, and roof wear.
 
-This is an AI assistant, not a licensed home inspection.
+Findings include a confidence score and repair priority. Cost ranges are rough CAD estimates from the photo only.
+
+This is an AI visual assessment only. It does not replace a professional home inspection.
 
 ## Setup
 
@@ -20,14 +22,17 @@ GEMINI_API_KEY=your_gemini_api_key_here
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://127.0.0.1:3000](http://127.0.0.1:3000).
 
 ## How it works
 
-1. Landing page (`/`) — start an inspection
-2. Inspect page (`/inspect`) — camera or file upload, pick an area
-3. `POST /api/inspect` — sends the photo to Gemini (`gemini-3.6-flash`)
-4. Report — photo stays on screen; findings list what is visible and what to do
+1. Landing (`/`) — start
+2. My Home (`/home`) — rooms, issue counts, and repair priority
+3. Room (`/rooms/[slug]`) — photos and findings
+4. Scan (`/rooms/[slug]/scan`) — walk-around frame capture
+5. `POST /api/inspect` — sends up to 8 frames to Gemini (`gemini-3.6-flash`)
+
+Scans are stored in the browser (`localStorage`), not on a server.
 
 ## Scripts
 

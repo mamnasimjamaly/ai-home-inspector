@@ -1,12 +1,13 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import {
-  isArea,
+  isRoomSlug,
   parseFindings,
-  type Area,
   type Finding,
+  type RoomSlug,
 } from "@/lib/inspection";
 
-const MAX_BYTES = 8 * 1024 * 1024;
+const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_PHOTOS = 8;
 const ALLOWED_TYPES = new Set([
   "image/jpeg",
   "image/png",
@@ -26,11 +27,46 @@ const findingsSchema = {
         properties: {
           id: { type: Type.STRING },
           title: { type: Type.STRING },
-          severity: { type: Type.STRING, enum: ["high", "medium", "low"] },
+          category: {
+            type: Type.STRING,
+            enum: [
+              "cracks",
+              "water-stains",
+              "mold-like-discoloration",
+              "peeling-paint",
+              "wood-deterioration",
+              "damaged-siding",
+              "damaged-railing",
+              "missing-caulking",
+              "roof-damage",
+              "other",
+            ],
+          },
+          priority: {
+            type: Type.STRING,
+            enum: ["critical", "high", "medium", "low"],
+          },
+          priorityReason: { type: Type.STRING },
+          confidence: { type: Type.NUMBER },
           summary: { type: Type.STRING },
           whatToDo: { type: Type.STRING },
+          frameIndex: { type: Type.INTEGER },
+          estimatedCostMinCad: { type: Type.INTEGER },
+          estimatedCostMaxCad: { type: Type.INTEGER },
         },
-        required: ["id", "title", "severity", "summary", "whatToDo"],
+        required: [
+          "id",
+          "title",
+          "category",
+          "priority",
+          "priorityReason",
+          "confidence",
+          "summary",
+          "whatToDo",
+          "frameIndex",
+          "estimatedCostMinCad",
+          "estimatedCostMaxCad",
+        ],
       },
     },
   },
@@ -46,52 +82,68 @@ export class InspectError extends Error {
   }
 }
 
-export function parseArea(value: FormDataEntryValue | null): Area {
-  if (typeof value !== "string" || !isArea(value)) {
-    throw new InspectError("Choose an area first.", 400);
+export function parseRoom(value: FormDataEntryValue | null): RoomSlug {
+  if (typeof value !== "string" || !isRoomSlug(value)) {
+    throw new InspectError("Choose a room first.", 400);
   }
   return value;
 }
 
-export async function inspectPhoto(
-  photo: Blob,
-  area: Area
+export async function inspectPhotos(
+  photos: Blob[],
+  room: RoomSlug
 ): Promise<Finding[]> {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new InspectError("Inspection is not configured.", 500);
   }
-
-  const mimeType = photo.type || "image/jpeg";
-  if (!ALLOWED_TYPES.has(mimeType)) {
-    throw new InspectError("Use a JPG, PNG, or WebP photo.", 400);
+  if (photos.length === 0) {
+    throw new InspectError("Add at least one frame.", 400);
   }
-  if (photo.size > MAX_BYTES) {
-    throw new InspectError("That photo is too large. Try a smaller image.", 400);
+  if (photos.length > MAX_PHOTOS) {
+    throw new InspectError("Use at most 8 frames per scan.", 400);
+  }
+
+  const imageParts = [];
+  for (const photo of photos) {
+    const mimeType = photo.type || "image/jpeg";
+    if (!ALLOWED_TYPES.has(mimeType)) {
+      throw new InspectError("Use JPG, PNG, or WebP frames.", 400);
+    }
+    if (photo.size > MAX_BYTES) {
+      throw new InspectError("A frame is too large. Try scanning again.", 400);
+    }
+    imageParts.push({
+      inlineData: {
+        mimeType,
+        data: Buffer.from(await photo.arrayBuffer()).toString("base64"),
+      },
+    });
   }
 
   const ai = new GoogleGenAI({ apiKey });
-  const imageData = Buffer.from(await photo.arrayBuffer()).toString("base64");
-
   const response = await ai.models.generateContent({
     model: "gemini-3.6-flash",
     contents: [
       {
         role: "user",
         parts: [
-          { inlineData: { mimeType, data: imageData } },
+          ...imageParts,
           {
-            text: `You are a cautious home-maintenance assistant, not a licensed inspector.
-Look at the photo. The homeowner labeled this photo as: ${area}.
-Report only issues that are actually visible. Do not invent damage or guess behind surfaces.
-If nothing concerning is visible, return an empty findings array.
-Each finding needs:
-- a short kebab-case id
-- a concise title
-- severity high|medium|low
-- summary: 1-2 sentences describing what is visible
-- whatToDo: one concrete next step the homeowner can take
-This is not a professional inspection or a safety certification.`,
+            text:
+              "You are a cautious home-maintenance assistant, not a licensed inspector. " +
+              "The homeowner is walking through this room: " +
+              room +
+              ". Images are numbered from frame 0. " +
+              "Look for cracks, water stains, mold-like discoloration, peeling paint, wood deterioration, damaged siding, loose or damaged railing, missing caulking, and roof damage. " +
+              "Report only what is actually visible. Do not invent damage. If nothing concerning is visible, return an empty findings array. " +
+              "Do not sound certain. Titles must start with Possible, such as Possible water damage. " +
+              "confidence is 20-95 and must reflect uncertainty. " +
+              "priority: critical = safety or active leak, high = likely structural or safety concern, medium = maintenance, low = cosmetic. " +
+              "priorityReason is a short phrase such as Safety risk or Maintenance. " +
+              "frameIndex is the 0-based frame where the issue is most visible. " +
+              "estimatedCostMinCad and estimatedCostMaxCad are rough Canadian-dollar ranges from typical contractor categories, or 0 if you cannot estimate. " +
+              "This is an AI visual assessment only and does not replace a professional home inspection.",
           },
         ],
       },
@@ -106,8 +158,9 @@ This is not a professional inspection or a safety certification.`,
   if (!text) return [];
 
   try {
-    return parseFindings(JSON.parse(text)).slice(0, 8);
+    return parseFindings(JSON.parse(text)).slice(0, 15);
   } catch {
+    console.error("Failed to parse findings", text);
     return [];
   }
 }
